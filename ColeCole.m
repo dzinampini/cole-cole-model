@@ -1,0 +1,405 @@
+input('Hello and welcome!\n\nThis application enables you to calculate to ake computations using the Cole Cole Model.\n\nPress enter to continue. ')
+
+input('You need to upload your data as a sample.csv file in this application directory.\n\nThe column headings should follow the following format: \n\n sample_1_amplitude | sample_1_phase | sample_2_amplitude | sample_2_phase | ...... | sample_n_amplitude | sample_n_phase\n\nEach column should have 19 values.\n\nPress enter to continue.')
+
+file_name = 'sample.csv'
+
+csv_data = readmatrix(file_name); 
+file_id = fopen(file_name, 'r');
+
+first_line = fgetl(file_id);
+fclose(file_id);
+
+cells = strsplit(first_line, ',');
+columns_count = numel(cells);
+
+
+
+% Check if the number is even
+if mod(columns_count, 2) == 0
+    disp('Great, your file was found with valid data');
+    % Your code here: Put the code you want to execute if the number is even
+else
+    disp('Invalid data found in your file. Check values are in the correct format');
+    return; % Exit the script
+end
+
+disp(csv_data)
+
+
+samples_list = [];
+ss_values_list = [];
+cr_values_list = [];
+p0r_values_list = [];
+tr_values_list = [];
+mr_values_list = [];
+
+
+required_samples = columns_count/2;
+% required_samples = 6;
+
+samples_quantity = 19;
+amplitudes = []; % amplitude
+phase_values = []; % phase values
+
+
+for sample_number=1:required_samples
+
+%The following is field data 
+N=16;%(or: 13,14,15,16,17), which are data used for estimation; 
+
+NN=19; 
+
+% frequency. fixed values 
+w=ones(NN,1); %frequency
+w(1)=20000; w(2)=12000; w(3)=6000; w(4)=3000; 
+w(5)=1500; w(6)=750; w(7)=375; w(8)=187.5; 
+w(9)=93.75; w(10)=46.875; w(11)=23.4375; w(12)=11.71875; 
+w(13)=5.859375; w(14)=2.929687; w(15)=1.464844; w(16)=0.732422; 
+w(17)=0.366211; w(18)=0.183105; w(19)=0.091553; 
+
+% resistivity amplitude inputs. get from user
+AM=ones(NN,1); %amplitude 
+
+% resistivity phase values. get from user 
+PH=ones(NN,1);%phase 
+
+fprintf('Sample number' + string(sample_number));
+AM = csv_data(:, ((sample_number*2)-1))
+PH = csv_data(:, (sample_number*2))
+
+% if sample_number == 1
+%     AM = amplitudes1;
+%     PH = phase_values1;
+% elseif sample_number == 2
+%     AM = amplitudes2;
+%     PH = phase_values2;
+% elseif sample_number == 3
+%     AM = amplitudes3;
+%     PH = phase_values3;
+% elseif sample_number == 4
+%     AM = amplitudes10;
+%     PH = phase_values10;
+% elseif sample_number == 5
+%     AM = amplitudes14;
+%     PH = phase_values14;
+% elseif sample_number == 6
+%     AM = amplitudes15;
+%     PH = phase_values15;
+% end
+
+
+p=ones(1,NN);%for field data 
+q=ones(1,NN);%for theoretically estimated data 
+Dt=rand(1,N);%white noise, this is for testing robustness 
+
+for n=1:NN %calculate field data 
+p(n)=AM(n)*(cos(PH(n)/1000)+i*sin(PH(n)/1000)); 
+end; 
+
+%Intermediate variable buffers 
+Mu=ones(1,N-1); %mu 
+Le=ones(1,N-1); %lambda 
+Ph=ones(1,N-1); %phi 
+Ps=ones(1,N-1); %psi 
+A=ones(1,N-1); %for A_k 
+C=ones(1,N-1); %for C_k 
+D=ones(1,N-1); %for D_k 
+
+%Parameters 
+CC0=-1; %c 
+PP0=-1; %rho_0 
+MM0=0; %m 
+TT0=0; %tau 34 
+
+%Set searching interval for Golden Section Algorithm 
+%GN=20; %Number of sub-intervals 
+GN=10; 
+g0=1;%the optimal interval 
+Smin=0;%smallest S 
+CM=0; ECMIN=0; EV=ones(1,2); EP=ones(1,2); EX=ones(1,2); EM=ones(1,2);%For swap indexes 
+COUNTMAX=100; %limit of iteration 
+for gi=1:GN 
+gd=0.998/GN; 
+CH=0.001+gi*gd; 
+CL=CH-gd; 
+%For swap indexes 
+CM=0; ECMIN=0; 
+DC=CH-CL; 
+%Calculate intermediate variables 
+for k=1:N-1 
+Mu(k)=real(1/(p(k+1)-p(k))); Le(k)=imag(1/(p(k+1)-p(k))); 
+Ph(k)=real(p(k+1)/(p(k+1)-p(k))); Ps(k)=imag(p(k+1)/(p(k+1)-p(k))); 
+end; 
+COUNT=0; %Count the number for golden iteration 
+ID=1;%Index if the new testing point: ID=1 means new testing point is at 
+%lower position (0.382), ID=2 means new testing point is at higher position (0.618) 
+%set first two testing points 
+C1=CL+(CH-CL)*(1-0.618); 
+C2=CL+(CH-CL)*0.618; 
+%For golden section algorithm 
+while DC>0.001&COUNT<COUNTMAX 
+if COUNT==0 
+ID=1; 
+elseif COUNT==1 
+ID=2; 
+end; 
+if ID==1 
+c=C1; 
+else 
+c=C2; 
+end; 
+%For calculating A,C,D; 
+SN=sin(c*pi/2); 
+CS=cos(c*pi/2); 
+for k=1:N-1 
+% w1=w(k); w2=w(k+1); D(k)=w2^c/(w1^c-w2^c); 
+w1=w(k)*2*pi; w2=w(k+1)*2*pi; D(k)=w2^c/(w1^c-w2^c); 
+A(k)=CS*w1^c*D(k); C(k)=SN*w1^c*D(k); 
+end; 
+%For calculating P 
+S1=0; S2=0; % 35 
+
+for k=1:N-1 
+w1=w(k)*2*pi; w2=w(k+1)*2*pi; 
+P1=(A(k)*Mu(k)+C(k)*Le(k)); P2=(w1^c*D(k))^2; 
+S1=S1+P1; S2=S2+P2; 
+end; 
+P=S1/S2; 
+%For calculating H 
+S1=0; S2=0; 
+for k=1:N-1 
+w1=w(k)*2*pi; w2=w(k+1)*2*pi; 
+H1=A(k)*(Ph(k)+D(k))+C(k)*Ps(k); H2=(w1^c*D(k))^2; 
+S1=S1+H1; S2=S2+H2; 
+end; 
+H=S1/S2; 
+%Construct M, L 
+M=ones(2*N-2,1); L=ones(2*N-2,1); 
+for k=1:N-1 
+M(2*k-1)=A(k)*P-Mu(k); M(2*k)=C(k)*P-Le(k); 
+L(2*k-1)=A(k)*H-Ph(k)-D(k); L(2*k)=C(k)*H-Ps(k); 
+end; 
+%Estimate parameters for given c 
+%Assume p0 is real 
+EP(ID)=inv(M'*M)*M'*L;% estimate rho_0 
+p0t=EP(ID); 
+EX(ID)=P*p0t-H;% estimate tau^c 
+Xt=EX(ID); CS=cos(c*pi/2); SN=sin(c*pi/2); 
+S1=0; S2=0; 
+for k=1:N 
+O=(CS+i*SN)*(w(k)*2*pi)^c*Xt; Q=abs(O/(1+O)); P=abs(1-p(k)/p0t); 
+S1=S1+Q*P; S2=S2+Q*Q; 
+end; 
+EM(ID)=S1/S2; %estimate m 
+mt=EM(ID); 
+%Calculate estimated value rho(k) for given c 
+for n=1:N 
+% q(n)=p0t*(1-mt*(1-1/(1+(CS+i*SN)*(w(n))^c*Xt))); 
+q(n)=p0t*(1-mt*(1-1/(1+(CS+i*SN)*(w(n)*2*pi)^c*Xt))); 
+end; 
+%Calculate square error 
+S=0; 
+for n=1:N 
+S=S+(real(p(n))-real(q(n)))^2+(imag(p(n))-imag(q(n)))^2; 
+end; 
+%compare error S with different c to find minimal S(c) 
+EV(ID)=S; 
+if COUNT > 0 
+if EV(1)<EV(2) 
+CC0=C1; PP0=EP(1); XX0=EX(1); MM0=EM(1); 
+ECMIN=EV(1); CH=C2; CM=C1; 
+else 
+CC0=C2; PP0=EP(2); XX0=EX(2); MM0=EM(2); 
+ECMIN=EV(2); CL=C1; CM=C2; 
+end; % 36 
+
+CN=CH+CL-CM; 
+if CN<CM 
+C1=CN; C2=CM; ID=1; EP(2)=PP0; 
+EX(2)=XX0; EM(2)=MM0; EV(2)=ECMIN; 
+else 
+C1=CM; C2=CN; ID=2; EP(1)=PP0; 
+EX(1)=XX0; EM(1)=MM0; EV(1)=ECMIN; 
+end; 
+end; 
+DC=CH-CL; COUNT=COUNT+1; 
+end; 
+%Get best interval 
+if gi==1 
+g0=1; 
+Smin=S; 
+%Get parameter c 
+cr=CC0; 
+%Get parameter rho_0 
+p0r=PP0; 
+%Get parameter tau 
+tr=0; 
+if XX0>0; 
+tr=XX0^(1/cr); 
+end; 
+%Get parameter m; 
+mr=MM0; 
+else 
+if S<Smin 
+g0=gi; 
+Smin=S; 
+%Get parameter c 
+cr=CC0; 
+%Get parameter rho_0 
+p0r=PP0; 
+%Get parameter tau 
+tr=0; 
+if XX0>0; 
+tr=XX0^(1/cr); 
+end; 
+%Get parameter m; 
+mr=MM0; 
+end; 
+end; 
+end; 
+%For overall error 
+CS=cos(cr*pi/2); SN=sin(cr*pi/2); 
+for n=1:NN 
+% q(n)=p0r*(1-mr*(1-1/(1+(CS+i*SN)*(w(n)*tr)^cr))); 
+q(n)=p0r*(1-mr*(1-1/(1+(CS+i*SN)*(w(n)*2*pi*tr)^cr))); 
+end; 
+S=0; 
+for n=1:NN 
+S=S+(real(p(n))-real(q(n)))^2+(imag(p(n))-imag(q(n)))^2; 
+end; 
+%Show result 
+% S %overall error 
+%COUNT %number of iterations 
+% cr % c 
+% p0r % rho_0 
+% tr % tau 37 
+% mr % m 
+%Gradient approach: 
+beta=-0.001;%step length 
+DTS=100; 
+while DTS>0.00001 %The error reduced 
+%Find gradient 
+X1=0;X2=0;X3=0;X4=0; 
+step=0.0001; 
+for n=1:NN 
+wtc=(w(n)*2*pi*tr)^cr;%(wtau)^c 
+xi=1+wtc*cos(cr*pi/2);%xi 
+eta=wtc*sin(cr*pi/2);%eta 
+xe2=xi*xi+eta*eta;%xi^2+eta^2 
+qr=p0r*(1-mr*(1-xi/xe2));%real(q) 
+qi=p0r*(1-mr*(1+eta/xe2));%imag(q) 
+xic=wtc*log(cr)*cos(cr*pi/2)-wtc*sin(cr*pi/2)*pi/2;%pa(xi)/pa(c) 
+xit=cr*wtc*cos(cr*pi/2)/tr;%pa(xi)/pa(tau) 
+etac=wtc*log(cr)*sin(cr*pi/2)+wtc*cos(cr*pi/2)*pi/2;%pa(eta)/pa(c) 
+etat=cr*wtc*sin(cr*pi/2)/tr;%pa(eta)/pa(tau) 
+qrr=1-mr*(1-xi/xe2);%pa(qr)/pa(rho) 
+qrm=-p0r*(1-xi/xe2);%pa(qr)/pa(m) 
+qrc=p0r*mr*((xic*xe2)-xi*(2*xi*xic+2*eta*etac))/xe2/xe2;%pa(qr)/pa(c) 
+qrt=p0r*mr*((xit*xe2)-xi*(2*xi*xit+2*eta*etat))/xe2/xe2;%pa(qr)/pa(tau) 
+qir=1-mr*(1+eta/xe2);%pa(qi)/pa(rho) 
+qim=-p0r*(1+eta/xe2);%pa(qi)/pa(m) 
+qic=-p0r*mr*((etac*xe2)-eta*(2*xi*xic+2*eta*etac))/xe2/xe2;%pa(qr)/pa(c) 
+qit=-p0r*mr*((etat*xe2)-eta*(2*xi*xit+2*eta*etat))/xe2/xe2;%pa(qr)/pa(tau) 
+X1=X1+(qr-real(p(n)))*qrr+(qi-imag(p(n)))*qir;%grad(S)_r 
+X2=X2+(qr-real(p(n)))*qrm+(qi-imag(p(n)))*qim;%grad(S)_m 
+X3=X3+(qr-real(p(n)))*qrc+(qi-imag(p(n)))*qic;%grad(S)_c 
+X4=X4+(qr-real(p(n)))*qrt+(qi-imag(p(n)))*qit;%grad(S)_t 
+end; 
+%Get modifying propotional 
+AAAA=abs(X1)+abs(X2)+abs(X3)+abs(X4); 
+alpha1=beta*X1/AAAA; 
+alpha2=beta*X2/AAAA; 
+alpha3=beta*X3/AAAA; 
+alpha4=beta*X4/AAAA; 
+%Modified parameters: 
+p0r=p0r*(1+alpha1); 
+mr=mr*(1+alpha2); 
+cr=cr*(1+alpha3); 
+tr=tr*(1+alpha4); 
+%For overall error 
+CS=cos(cr*pi/2); SN=sin(cr*pi/2); 
+for n=1:NN 
+q(n)=p0r*(1-mr*(1-1/(1+(CS+i*SN)*(w(n)*2*pi*tr)^cr))); 
+end; 
+SS=0; 
+for n=1:NN 
+SS=SS+(real(p(n))-real(q(n)))^2+(imag(p(n))-imag(q(n)))^2; 38 
+
+end; 
+
+DTS=SS-S; 
+S=SS; 
+end; 
+
+%Show result 
+% SS %overall error 
+% cr % c 
+% p0r % rho_0 
+% tr % tau 
+% mr % m
+% 
+% fprintf('Done with sample <sample number here>\n');
+
+% auto get this data 
+
+% samples_list(end+1) = sample_number;
+samples_list = [samples_list; sample_number];
+ss_values_list = [ss_values_list; SS];
+cr_values_list = [cr_values_list; cr];
+p0r_values_list = [p0r_values_list; p0r];
+tr_values_list = [tr_values_list; tr];
+mr_values_list = [mr_values_list; mr];
+
+end
+
+% ss_value = ss_values_list;
+% cr_value = cr_values_list;
+% p0r_value = p0r_values_list;
+% tr_value = tr_values_list;
+% mr_value = mr_values_list;
+% disp(samples_list_2)
+% display(samples_list)
+
+input('Computing done. Press enter to view summary of results in a table.')
+
+T = table(samples_list,ss_values_list,cr_values_list,p0r_values_list,tr_values_list,mr_values_list)
+
+input('Press enter to view the ss values plot')
+plot(samples_list, ss_values_list, '-o');
+xlabel('Sample number');
+ylabel('ss');
+title('ss values graph');
+grid on;
+
+input('Press enter to view the cr values plot')
+plot(samples_list, cr_values_list, '-o');
+xlabel('Sample number'); 
+ylabel('cr');
+title('cr values graph');
+grid on; 
+
+input('Press enter to view the p0r values plot')
+plot(samples_list, p0r_values_list, '-o');
+xlabel('Sample number'); 
+ylabel('p0r');
+title('p0r values graph');
+grid on; 
+
+input('Press enter to view the tr values plot')
+plot(samples_list, tr_values_list, '-o');
+xlabel('Sample number'); 
+ylabel('tr');
+title('tr values graph');
+grid on; 
+
+
+input('Press enter to view the mr values plot')
+plot(samples_list, mr_values_list, '-o');
+xlabel('Sample number'); 
+ylabel('mr');
+title('mr values graph');
+grid on; 
+
+input('Done. Press enter to start again')
+
